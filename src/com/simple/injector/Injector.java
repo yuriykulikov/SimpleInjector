@@ -11,7 +11,7 @@ import java.util.Map;
  * Simple dependency injection framework.
  * 
  * Create using {@link #createInjector(IConfig)}. Configure bindings using
- * {@link IConfig}. Inject objects using {@link #inject(Class)}.
+ * {@link IConfig}. Inject objects using {@link #getInstance(Class)}.
  */
 public class Injector implements IInjector {
     /**
@@ -103,12 +103,12 @@ public class Injector implements IInjector {
         return new Injector(module);
     }
 
-    public Object inject(Class clazz) {
+    public Object getInstance(Class clazz) {
         return checkNotNull(((IFactory) factories.get(clazz)).get(clazz));
     }
 
-    public Object inject(Object scope, Class clazz) {
-        return inject(clazz);
+    public Object getInstance(Object scope, Class clazz) {
+        return getInstance(clazz);
     }
 
     private Injector(IConfig module) {
@@ -205,12 +205,12 @@ public class Injector implements IInjector {
                     return instantiateWithDefaultConstructor(constructors[0]);
                 } else if (constructors.length == 1) {
                     return instantiateWithConstructorInjection(binding, constructors[0]);
+                }  else {
+                    return instantiateWithConstructorInjection(binding, constructors[0]);
                 }
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-
-            throw new RuntimeException("not possible to get here");
         }
 
         private Object instantiateWithDefaultConstructor(Constructor constructor) throws Exception {
@@ -221,7 +221,7 @@ public class Injector implements IInjector {
             Object[] parameterObjects = new Object[constructor.getParameterTypes().length];
             for (int i = 0; i < constructor.getParameterTypes().length; i++) {
                 Class parameterClass = constructor.getParameterTypes()[i];
-                parameterObjects[i] = injector.inject(parameterClass);
+                parameterObjects[i] = injector.getInstance(parameterClass);
             }
             return constructor.newInstance(parameterObjects);
         }
