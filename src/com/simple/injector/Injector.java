@@ -31,7 +31,7 @@ public class Injector implements IInjector {
      * ID, name and so on.
      */
     public interface IProvider {
-        Object provide(IInjector context);
+        Object provide(IInjector injector);
     }
 
     /**
