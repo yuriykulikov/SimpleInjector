@@ -114,8 +114,12 @@ public class Injector implements IInjector {
         Map factories = (Map) scopes.get(scope);
         IFactory factory = (IFactory)factories.get(clazz);
         if(factory ==null){
-            throw new NullPointerException("Class " + clazz + " was not bound for scope " + scope + ". Have you configured the injector correctly?");
-            //TODO look in other scopes to help devs
+            try {
+                return instantiate(clazz, this);
+            } catch (Exception e){
+                //TODO look in other scopes to help devs
+                throw new NullPointerException("Class " + clazz + " was not bound for scope " + scope + ". Have you configured the injector correctly?");
+            }
         }
         return checkNotNull(factory.get(clazz));
     }
@@ -179,7 +183,7 @@ public class Injector implements IInjector {
             if (binding.provider != null) {
                 this.provider = binding.provider;
             } else {
-                this.provider = new ConstructorInjectionProvider(binding, Injector.this);
+                this.provider = new ConstructorInjectionProvider(binding);
             }
         }
 
@@ -202,48 +206,46 @@ public class Injector implements IInjector {
 
     private static final class ConstructorInjectionProvider implements IProvider {
         private final Binding binding;
-        private final Injector injector;
-
-        private ConstructorInjectionProvider(Binding binding, Injector injector) {
+    
+        private ConstructorInjectionProvider(Binding binding) {
             this.binding = binding;
-            this.injector = injector;
         }
-
-        public Object provide(IInjector context) {
-            return instantiate(binding);
+    
+        public Object provide(IInjector injector) {
+            return instantiate(binding.boundToClazz, injector);
         }
+    }
 
-        /**
-         * Must have either no constructors or only one. All arguments must be
-         * bound.
-         */
-        private Object instantiate(final Binding binding) {
-            try {
-                Constructor[] constructors = binding.boundToClazz.getConstructors();
-                if (constructors[0].getParameterTypes().length == 0) {
-                    return instantiateWithDefaultConstructor(constructors[0]);
-                } else if (constructors.length == 1) {
-                    return instantiateWithConstructorInjection(binding, constructors[0]);
-                }  else {
-                    return instantiateWithConstructorInjection(binding, constructors[0]);
-                }
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+    /**
+     * Must have either no constructors or only one. All arguments must be
+     * bound.
+     */
+    private static Object instantiate(final Class boundToClazz, IInjector injector) {
+        try {
+            Constructor[] constructors = boundToClazz.getConstructors();
+            if (constructors[0].getParameterTypes().length == 0) {
+                return instantiateWithDefaultConstructor(constructors[0]);
+            } else if (constructors.length == 1) {
+                return instantiateWithConstructorInjection(constructors[0], injector);
+            }  else {
+                return instantiateWithConstructorInjection(constructors[0], injector);
             }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
+    }
 
-        private Object instantiateWithDefaultConstructor(Constructor constructor) throws Exception {
-            return constructor.newInstance(new Object[] {});
-        }
+    private static Object instantiateWithDefaultConstructor(Constructor constructor) throws Exception {
+        return constructor.newInstance(new Object[] {});
+    }
 
-        private Object instantiateWithConstructorInjection(final Binding binding, Constructor constructor) throws Exception {
-            Object[] parameterObjects = new Object[constructor.getParameterTypes().length];
-            for (int i = 0; i < constructor.getParameterTypes().length; i++) {
-                Class parameterClass = constructor.getParameterTypes()[i];
-                parameterObjects[i] = injector.getInstance(parameterClass);
-            }
-            return constructor.newInstance(parameterObjects);
+    private static Object instantiateWithConstructorInjection(Constructor constructor, IInjector injector) throws Exception {
+        Object[] parameterObjects = new Object[constructor.getParameterTypes().length];
+        for (int i = 0; i < constructor.getParameterTypes().length; i++) {
+            Class parameterClass = constructor.getParameterTypes()[i];
+            parameterObjects[i] = injector.getInstance(parameterClass);
         }
+        return constructor.newInstance(parameterObjects);
     }
 }
 
