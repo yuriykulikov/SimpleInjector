@@ -14,6 +14,9 @@ import java.util.Map;
  * {@link IConfig}. Inject objects using {@link #getInstance(Class)}.
  */
 public class Injector implements IInjector {
+    
+    public static final Object DEFAULT_SCOPE = "DEFAULT_SCOPE";
+    
     /**
      * Implement to get asked to configure the {@link Injector} using a
      * {@link Binder}.
@@ -62,7 +65,7 @@ public class Injector implements IInjector {
 
         private IProvider provider = null;
 
-        private Object scope;
+        private Object scope = DEFAULT_SCOPE;
 
         public Binding(Class clazz) {
             this.clazz = clazz;
@@ -97,23 +100,30 @@ public class Injector implements IInjector {
         public Object get(Class clazz);
     }
 
-    private final Map factories = new HashMap();
+    private final Map scopes = new HashMap();
 
     public static IInjector createInjector(IConfig module) {
         return new Injector(module);
     }
 
     public Object getInstance(Class clazz) {
-        return checkNotNull(((IFactory) factories.get(clazz)).get(clazz));
+        return getInstance(DEFAULT_SCOPE, clazz);
     }
 
     public Object getInstance(Object scope, Class clazz) {
-        return getInstance(clazz);
+        Map factories = (Map) scopes.get(scope);
+        IFactory factory = (IFactory)factories.get(clazz);
+        if(factory ==null){
+            throw new NullPointerException("Class " + clazz + " was not bound for scope " + scope + ". Have you configured the injector correctly?");
+            //TODO look in other scopes to help devs
+        }
+        return checkNotNull(factory.get(clazz));
     }
 
     private Injector(IConfig module) {
         // someone will need the IInjector itself
-        factories.put(IInjector.class, new IFactory() {
+        scopes.put(DEFAULT_SCOPE, new HashMap());
+        ((Map) scopes.get(DEFAULT_SCOPE)).put(IInjector.class, new IFactory() {
             public Object get(Class clazz) {
                 return Injector.this;
             }
@@ -148,7 +158,16 @@ public class Injector implements IInjector {
     }
 
     private void bindAsSingleton(final Binding binding) {
-        factories.put(binding.clazz, new SingletonFactory(binding));
+        getOrCreateScope(binding).put(binding.clazz, new SingletonFactory(binding));
+    }
+
+    private Map getOrCreateScope(final Binding binding) {
+        Map scopeBindings = (Map) scopes.get(binding.scope);
+        if(scopeBindings == null){
+            scopeBindings = new HashMap();
+            scopes.put(binding.scope, scopeBindings);
+        }
+        return scopeBindings;
     }
 
     private final class SingletonFactory implements IFactory {
@@ -174,7 +193,7 @@ public class Injector implements IInjector {
     }
 
     private void bindToInstance(final Binding binding) {
-        factories.put(binding.clazz, new IFactory() {
+        getOrCreateScope(binding).put(binding.clazz, new IFactory() {
             public Object get(Class clazz) {
                 return binding.instance;
             }
@@ -227,3 +246,5 @@ public class Injector implements IInjector {
         }
     }
 }
+
+
