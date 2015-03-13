@@ -129,18 +129,22 @@ public class Injector implements IInjector {
             saveForDump(clazz, instance, true);
             return instance;
             
-        } else {
+        } else if (clazz.getConstructors().length > 0){
             // this is an implicit binding, we can try to instantiate if this is
             // a concrete class
             try {
+                //TODO me not like this
                 final Object  instance = instantiate(clazz, this);
                 saveForDump(clazz, instance, false);
                 return instance;
             } catch (Exception e) {
                 // TODO look in other scopes to help devs, dump something
                 throw new RuntimeException("Class " + clazz + " was not bound for scope " + scope
-                        + " and I was not able to instantiate it as a concrete class. Have you configured the injector correctly?");
+                        + " and I was not able to instantiate it as a concrete class. Have you configured the injector correctly?", e);
             }
+        } else {
+            throw new RuntimeException("Class " + clazz + " was not bound for scope " + scope
+                    + " and it has no public constructors. Have you configured the injector correctly?");
         }
     }
 
