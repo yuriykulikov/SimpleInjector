@@ -17,7 +17,7 @@ import java.util.Map.Entry;
 public class Injector implements IInjector {
 
     public static final Object DEFAULT_SCOPE = "DEFAULT_SCOPE";
-    private static final boolean DBG = true;
+    private final boolean DBG;
 
     /**
      * Implement to get asked to configure the {@link Injector} using a
@@ -105,7 +105,11 @@ public class Injector implements IInjector {
     private final Map scopes = new HashMap();
 
     public static IInjector createInjector(IConfig module) {
-        return new Injector(module);
+        return new Injector(module, false);
+    }
+    
+    public static IInjector createInjector(IConfig module, boolean debug) {
+        return new Injector(module, debug);
     }
 
     public Object getInstance(Class clazz) {
@@ -140,7 +144,8 @@ public class Injector implements IInjector {
         }
     }
 
-    private Injector(IConfig module) {
+    private Injector(IConfig module, boolean debug) {
+        this.DBG = debug;
         // someone will need the IInjector itself
         scopes.put(DEFAULT_SCOPE, new HashMap());
         ((Map) scopes.get(DEFAULT_SCOPE)).put(IInjector.class, new IFactory() {
@@ -178,7 +183,14 @@ public class Injector implements IInjector {
     }
 
     private void bindAsSingleton(final Binding binding) {
-        getOrCreateScope(binding).put(binding.clazz, new SingletonFactory(binding));
+        SingletonFactory singletonFactory = new SingletonFactory(binding);
+        Map scope = getOrCreateScope(binding);
+        if(scope.put(binding.clazz, singletonFactory) !=null){
+            throw new RuntimeException("Binding for " + binding.clazz + " already existed!");
+        }
+        if(!binding.boundToClazz.equals(binding.clazz) && scope.put(binding.boundToClazz, singletonFactory)!=null){
+            throw new RuntimeException("Binding for " + binding.boundToClazz + " already existed!");
+        }
     }
 
     private Map getOrCreateScope(final Binding binding) {
