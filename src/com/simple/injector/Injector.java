@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 /**
  * Simple dependency injection framework.
@@ -14,9 +15,10 @@ import java.util.Map;
  * {@link IConfig}. Inject objects using {@link #getInstance(Class)}.
  */
 public class Injector implements IInjector {
-    
+
     public static final Object DEFAULT_SCOPE = "DEFAULT_SCOPE";
-    
+    private static final boolean DBG = true;
+
     /**
      * Implement to get asked to configure the {@link Injector} using a
      * {@link Binder}.
@@ -107,21 +109,35 @@ public class Injector implements IInjector {
     }
 
     public Object getInstance(Class clazz) {
-        return getInstance(DEFAULT_SCOPE, clazz);
+        return getInstanceInternal(DEFAULT_SCOPE, clazz);
     }
 
     public Object getInstance(Object scope, Class clazz) {
+        return getInstanceInternal(scope, clazz);
+    }
+
+    private Object getInstanceInternal(Object scope, Class clazz) {
         Map factories = (Map) scopes.get(scope);
-        IFactory factory = (IFactory)factories.get(clazz);
-        if(factory ==null){
+        IFactory factory = (IFactory) factories.get(clazz);
+        if (factory != null) {
+            // this is an explicit binding, everything is fine
+            final Object instance = checkNotNull(factory.get(clazz));
+            saveForDump(clazz, instance, true);
+            return instance;
+            
+        } else {
+            // this is an implicit binding, we can try to instantiate if this is
+            // a concrete class
             try {
-                return instantiate(clazz, this);
-            } catch (Exception e){
-                //TODO look in other scopes to help devs
-                throw new NullPointerException("Class " + clazz + " was not bound for scope " + scope + ". Have you configured the injector correctly?");
+                final Object  instance = instantiate(clazz, this);
+                saveForDump(clazz, instance, false);
+                return instance;
+            } catch (Exception e) {
+                // TODO look in other scopes to help devs, dump something
+                throw new RuntimeException("Class " + clazz + " was not bound for scope " + scope
+                        + " and I was not able to instantiate it as a concrete class. Have you configured the injector correctly?");
             }
         }
-        return checkNotNull(factory.get(clazz));
     }
 
     private Injector(IConfig module) {
@@ -167,7 +183,7 @@ public class Injector implements IInjector {
 
     private Map getOrCreateScope(final Binding binding) {
         Map scopeBindings = (Map) scopes.get(binding.scope);
-        if(scopeBindings == null){
+        if (scopeBindings == null) {
             scopeBindings = new HashMap();
             scopes.put(binding.scope, scopeBindings);
         }
@@ -206,13 +222,13 @@ public class Injector implements IInjector {
 
     private static final class ConstructorInjectionProvider implements IProvider {
         private final Binding binding;
-    
+
         private ConstructorInjectionProvider(Binding binding) {
             this.binding = binding;
         }
-    
+
         public Object provide(IInjector injector) {
-            return instantiate(binding.boundToClazz, injector);
+            return instantiate(binding.boundToClazz, (Injector) injector);
         }
     }
 
@@ -220,14 +236,14 @@ public class Injector implements IInjector {
      * Must have either no constructors or only one. All arguments must be
      * bound.
      */
-    private static Object instantiate(final Class boundToClazz, IInjector injector) {
+    private static Object instantiate(final Class boundToClazz, Injector injector) {
         try {
             Constructor[] constructors = boundToClazz.getConstructors();
             if (constructors[0].getParameterTypes().length == 0) {
                 return instantiateWithDefaultConstructor(constructors[0]);
             } else if (constructors.length == 1) {
                 return instantiateWithConstructorInjection(constructors[0], injector);
-            }  else {
+            } else {
                 return instantiateWithConstructorInjection(constructors[0], injector);
             }
         } catch (Exception e) {
@@ -239,14 +255,65 @@ public class Injector implements IInjector {
         return constructor.newInstance(new Object[] {});
     }
 
-    private static Object instantiateWithConstructorInjection(Constructor constructor, IInjector injector) throws Exception {
+    private static Object instantiateWithConstructorInjection(Constructor constructor, Injector injector) throws Exception {
         Object[] parameterObjects = new Object[constructor.getParameterTypes().length];
         for (int i = 0; i < constructor.getParameterTypes().length; i++) {
             Class parameterClass = constructor.getParameterTypes()[i];
-            parameterObjects[i] = injector.getInstance(parameterClass);
+            parameterObjects[i] = injector.getInstanceInternal(DEFAULT_SCOPE, parameterClass);
         }
         return constructor.newInstance(parameterObjects);
     }
+
+    /**
+     * <Class, List<Object>>
+     */
+    private final Map createdInstances = new HashMap();
+    
+    private static class InstantiatedObject {
+       public final Object object;
+       public final boolean explicitBinding;
+        public InstantiatedObject(Object object, boolean explicitBinding) {
+            this.object = object;
+            this.explicitBinding = explicitBinding;
+        }
+    }
+
+    private void saveForDump(Class clazz, Object instance, boolean explicitBinding) {
+        if (DBG){
+            List list = (List) createdInstances.get(clazz);
+            if (list == null){
+                list = new ArrayList();
+                createdInstances.put(clazz, list);
+            }
+            
+            boolean foundSameObject = false;
+            
+            for (Iterator iterator = list.iterator(); iterator.hasNext();) {
+                Object object = ((InstantiatedObject) iterator.next()).object;
+                if (object == instance){
+                    foundSameObject = true;
+                }
+            }
+            
+            if (!foundSameObject){
+                list.add(new InstantiatedObject(instance, explicitBinding));
+            }
+        }
+    }
+
+    public void dump(StringBuffer buffer) {
+        // Bindings
+    
+        // instances
+        for (Iterator iterator = createdInstances.entrySet().iterator(); iterator.hasNext();) {
+            Entry entry = (Entry) iterator.next();
+            List list = (List) entry.getValue();
+            buffer.append("\n").append(entry.getKey()).append(" - ").append(list.size()).append(" instance").append(list.size() == 1 ? "" :"s").append(":\n");
+            for (Iterator values = list.iterator(); values.hasNext();) {
+                InstantiatedObject object =  (InstantiatedObject) values.next();
+                buffer.append("    ").append(object.explicitBinding ? "" : "IMPLICIT ").append(object.object.getClass()).append(" - ").append(object.object).append("\n");
+            }
+        }
+        
+    }
 }
-
-
