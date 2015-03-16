@@ -123,6 +123,11 @@ public class Injector implements IInjector {
     private Object getInstanceInternal(Object scope, Class clazz) {
         Map factories = (Map) scopes.get(scope);
         IFactory factory = (IFactory) factories.get(clazz);
+        
+        if (factory == null) {
+            factory = (IFactory)  ((Map) scopes.get(DEFAULT_SCOPE)).get(clazz);
+        }
+        
         if (factory != null) {
             // this is an explicit binding, everything is fine
             final Object instance = checkNotNull(factory.get(clazz));
@@ -134,7 +139,7 @@ public class Injector implements IInjector {
             // a concrete class
             try {
                 //TODO me not like this
-                final Object  instance = instantiate(clazz, this);
+                final Object  instance = instantiate(clazz, this, scope);
                 saveForDump(clazz, instance, false);
                 return instance;
             } catch (Exception e) {
@@ -244,23 +249,24 @@ public class Injector implements IInjector {
         }
 
         public Object provide(IInjector injector) {
-            return instantiate(binding.boundToClazz, (Injector) injector);
+            return instantiate(binding.boundToClazz, (Injector) injector, binding.scope);
         }
     }
 
     /**
      * Must have either no constructors or only one. All arguments must be
      * bound.
+     * @param scope TODO
      */
-    private static Object instantiate(final Class boundToClazz, Injector injector) {
+    private static Object instantiate(final Class boundToClazz, Injector injector, Object scope) {
         try {
             Constructor[] constructors = boundToClazz.getConstructors();
             if (constructors[0].getParameterTypes().length == 0) {
                 return instantiateWithDefaultConstructor(constructors[0]);
             } else if (constructors.length == 1) {
-                return instantiateWithConstructorInjection(constructors[0], injector);
+                return instantiateWithConstructorInjection(constructors[0], injector, scope);
             } else {
-                return instantiateWithConstructorInjection(constructors[0], injector);
+                return instantiateWithConstructorInjection(constructors[0], injector, scope);
             }
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -271,11 +277,11 @@ public class Injector implements IInjector {
         return constructor.newInstance(new Object[] {});
     }
 
-    private static Object instantiateWithConstructorInjection(Constructor constructor, Injector injector) throws Exception {
+    private static Object instantiateWithConstructorInjection(Constructor constructor, Injector injector, Object scope) throws Exception {
         Object[] parameterObjects = new Object[constructor.getParameterTypes().length];
         for (int i = 0; i < constructor.getParameterTypes().length; i++) {
             Class parameterClass = constructor.getParameterTypes()[i];
-            parameterObjects[i] = injector.getInstanceInternal(DEFAULT_SCOPE, parameterClass);
+            parameterObjects[i] = injector.getInstanceInternal(scope, parameterClass);
         }
         return constructor.newInstance(parameterObjects);
     }
