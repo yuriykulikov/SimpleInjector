@@ -2,11 +2,14 @@ package com.simple.injector;
 
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 
 /**
  * Simple dependency injection framework.
@@ -294,9 +297,15 @@ public class Injector implements IInjector {
     private static class InstantiatedObject {
        public final Object object;
        public final boolean explicitBinding;
+       public final List dependencies;
         public InstantiatedObject(Object object, boolean explicitBinding) {
             this.object = object;
             this.explicitBinding = explicitBinding;
+            this.dependencies = new ArrayList();
+            Constructor[] constructors = object.getClass().getConstructors();
+            if(constructors.length == 1){
+                dependencies.addAll( Arrays.asList(constructors[0].getParameterTypes()));
+            }
         }
     }
 
@@ -323,19 +332,105 @@ public class Injector implements IInjector {
         }
     }
 
-    public void dump(StringBuffer buffer) {
+    public List dump() {
+        
+        ArrayList arrayList = new ArrayList(); 
         // Bindings
     
         // instances
+//        for (Iterator iterator = createdInstances.entrySet().iterator(); iterator.hasNext();) {
+//            Entry entry = (Entry) iterator.next();
+//            List list = (List) entry.getValue();
+//            set.add(new StringBuffer().append("\n").append(entry.getKey()).append(" - ").append(list.size()).append(" instance").append(list.size() == 1 ? "" :"s"));
+//            for (Iterator values = list.iterator(); values.hasNext();) {
+//                InstantiatedObject object =  (InstantiatedObject) values.next();
+//                buffer.append("    ").append(object.explicitBinding ? "" : "IMPLICIT ").append(object.object.getClass()).append(" - ").append(object.object).append("\n");
+//            }
+//        }
+        
+        //let's do some expensive stuff as this will be only a debug thing
+        
+        
+        Set implementedBy = new HashSet();
+        Set interfaces = new HashSet();
+        
+        // implemented by
         for (Iterator iterator = createdInstances.entrySet().iterator(); iterator.hasNext();) {
             Entry entry = (Entry) iterator.next();
             List list = (List) entry.getValue();
-            buffer.append("\n").append(entry.getKey()).append(" - ").append(list.size()).append(" instance").append(list.size() == 1 ? "" :"s").append(":\n");
             for (Iterator values = list.iterator(); values.hasNext();) {
                 InstantiatedObject object =  (InstantiatedObject) values.next();
-                buffer.append("    ").append(object.explicitBinding ? "" : "IMPLICIT ").append(object.object.getClass()).append(" - ").append(object.object).append("\n");
+                String implementation = object.object.getClass().getSimpleName().replaceAll("[^A-Za-z0-9]", "_");
+                String abstraction = ((Class)entry.getKey()).getSimpleName().replaceAll("[^A-Za-z0-9]", "_");
+                if(!implementation.equals(abstraction)){
+                    String string = new StringBuffer()
+                            .append(implementation)
+                            .append(" .up.|> ")
+                            .append(abstraction)
+                            .toString();
+                    implementedBy.add(string);
+                }
+                
+                if(((Class)entry.getKey()).isInterface()){
+                    interfaces.add("interface " + abstraction);
+                }
+//                String string = object.object.toString();
+//                String shortToString = string.indexOf('\n') >0 ?  string.substring(0, string.indexOf('\n')) : string;
+//                buffer.append(shortToString.replaceAll("[^A-Za-z0-9]", "_")).append(" -up-|> ").append(object.object.getClass().getSimpleName().replaceAll("[^A-Za-z0-9]", "_")).append("\n"); 
             }
         }
         
+        //TODO build a map dependencies to dependees with back and forth zeugs
+        
+        Map dependenciesToDependees =  new HashMap();
+
+        //to do this we have to save interfaces when we instantiate stuff
+        for (Iterator iterator = createdInstances.values().iterator(); iterator.hasNext();) {
+            List list = (List) iterator.next();
+            for (Iterator values = list.iterator(); values.hasNext();) {
+                InstantiatedObject object =  (InstantiatedObject) values.next();
+                
+                for (Iterator dependenciesIterator = object.dependencies.iterator(); dependenciesIterator.hasNext();) {
+                    
+                    Class dependencyClazz = (Class) dependenciesIterator.next();
+                    String dependee = object.object.getClass().getSimpleName().replaceAll("[^A-Za-z0-9]", "_");
+                    String dependency = dependencyClazz.getSimpleName().replaceAll("[^A-Za-z0-9]", "_");
+                    
+           
+                    if(!dependenciesToDependees.containsKey(dependency)){
+                        dependenciesToDependees.put(dependency, new ArrayList());
+                    }
+                    
+                  ((List)  dependenciesToDependees.get(dependency)).add(dependee);
+                    
+                }
+            }
+        }
+        
+        //dependency graph
+        Set dependsOn = new HashSet();
+        
+        for (Iterator iterator = dependenciesToDependees.entrySet().iterator(); iterator.hasNext();) {
+            Entry entry = (Entry) iterator.next();
+            List dependees = (List)entry.getValue();
+            for (Iterator values = dependees.iterator(); values.hasNext();) {
+                String dependee =  (String) values.next();
+                String string = new StringBuffer()
+                        .append(dependee)
+                        .append(dependees.size() > 5 ? " o---down- " : " o-down- " )
+                        .append(entry.getKey())
+                        .toString();
+                dependsOn.add(string);
+            }
+        }
+
+        arrayList.add("\n@startuml\n");
+        arrayList.add("hide empty methods\n");
+        arrayList.add("hide empty fields\n");
+        arrayList.addAll(interfaces);
+        arrayList.addAll(implementedBy);
+        arrayList.addAll(dependsOn);
+        arrayList.add("\n@enduml\n");
+        return arrayList;
     }
 }
